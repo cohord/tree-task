@@ -183,7 +183,7 @@
   <div class="dialog-top"><h3 id="taskDialogTitle">Task actions</h3><button class="dialog-close" data-close="taskDialog" aria-label="Close">×</button></div>
   <div class="dialog-content" id="taskActions">
     <button class="action" data-task-action="notes">Add / edit notes <small>Saved automatically</small></button>
-     <button class="action" data-task-action="dates">Schedule / edit dates <small>Gantt + Calendar</small></button>
+     <button class="action" data-task-action="dates">Schedule / dependencies <small>Gantt + Calendar</small></button>
     <button class="action" data-task-action="child">Add child task <small>⌘/Ctrl + Enter</small></button>
     <button class="action" data-task-action="sibling">Add sibling <small>Enter</small></button>
     <button class="action" data-task-action="indent">Indent under previous sibling <small>Tab</small></button>
@@ -210,7 +210,8 @@
     <div id="dateNewParentWrap" hidden><label for="dateNewParent">Parent task / project</label><select id="dateNewParent"></select></div>
     <button id="dateNotes" class="date-notes-btn" type="button" hidden>Open task notes ↗</button>
      <div class="two-cols"><div><label for="planStart">Start date</label><input id="planStart" type="date"></div><div><label for="planEnd">End / due date</label><input id="planEnd" type="date"></div></div>
-    <p class="hint">Leave both dates blank for an unscheduled task. If you set one date, the task is scheduled for that day. Undated parent tasks show their children's overall date range in Gantt.</p>
+    <div class="predecessor-editor" id="predecessorEditor"><div class="predecessor-heading"><strong>Depends on (predecessors)</strong><span id="predCount" class="gantt-range">None</span></div><input id="predecessorSearch" class="predecessor-search" placeholder="Find a task or project…" aria-label="Search for predecessor tasks"><div id="predecessorList" class="predecessor-list" role="group" aria-label="Select predecessors"></div><p class="predecessor-note">Finish-to-start: linked tasks start after the predecessor ends. Moving a task moves dependent tasks while preserving gaps.</p></div>
+     <p class="hint">Leave both dates blank for an unscheduled task. If you set one date, the task is scheduled for that day. Undated parent tasks show their children's overall date range in Gantt.</p>
     <div class="date-error" id="dateError" role="alert"></div>
     <div class="date-buttons"><button id="dateClear" type="button">Clear dates</button><button class="primary" type="submit">Save schedule</button></div>
   </form>
@@ -247,7 +248,7 @@
     <button class="action danger" id="clearButton">Delete all tasks</button>
     <p class="dialog-note">Edits save immediately on this device. OneDrive sync needs an internet connection and a Microsoft sign-in. If two devices change the same task or restructure the tree independently, Tree Task asks before replacing anything. Make regular JSON backups too.</p>
   </div>
-  <div class="version">Tree Task · prototype 3.1 · Tree + Gantt + Calendar + Notes</div>
+  <div class="version">Tree Task · prototype 4.0 · Tree + Gantt + Calendar + Dependencies</div>
 </dialog>
 <dialog id="moveDialog" aria-labelledby="moveTitle">
   <div class="dialog-top"><h3 id="moveTitle">Move task under…</h3><button class="dialog-close" data-close="moveDialog" aria-label="Close">×</button></div>
@@ -286,6 +287,7 @@
 </dialog>
 <input type="file" id="importFile" hidden accept=".json,application/json">
 <script src="./planning-core.js"></script>
+<script src="./dependency-core.js"></script>
 <script src="./sync-merge.js"></script>
 <script src="./onedrive-sync.js"></script>
 <script>
@@ -295,7 +297,7 @@
   const SAMPLE_FLAG = 'tree-task.sample-notice';
   const $ = id => document.getElementById(id);
   const ids = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 't-'+Date.now()+'-'+Math.random().toString(36).slice(2);
-  const makeNode = (title='', children=[]) => ({id:ids(), title, notes:'', completed:false, collapsed:false, startDate:null, endDate:null, children});
+  const makeNode = (title='', children=[]) => ({id:ids(), title, notes:'', completed:false, collapsed:false, startDate:null, endDate:null, predecessorIds:[], children});
   const examples = () => [
     makeNode('Example project', [makeNode('Project launch', [makeNode('Plan the work', [makeNode('Review the checklist')]),makeNode('Prepare for launch')])]),
     makeNode('Example tasks', [makeNode('Getting started', [makeNode('Add your first task'),makeNode('Try the planning views')]),makeNode('Connect OneDrive when ready')])
@@ -324,9 +326,9 @@
         total++;if(total>10000)throw Error('Maximum 10,000 tasks per import.');
         const id=(typeof n.id==='string'&&n.id.length<200&&!seen.has(n.id))?n.id:ids();seen.add(id);
         const dates=window.TreePlanning.normalizedDates(n);
-        return {id,title:String(n.title??'').slice(0,2000),notes:typeof n.notes==='string'?n.notes.slice(0,20000):'',completed:!!n.completed,collapsed:!!n.collapsed,...dates,children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
+        return {id,title:String(n.title??'').slice(0,2000),notes:typeof n.notes==='string'?n.notes.slice(0,20000):'',completed:!!n.completed,collapsed:!!n.collapsed,...dates,predecessorIds:n.predecessorIds??[],children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
       });
-    }; return walk(value,0);
+    }; const result=walk(value,0);window.TreeDependencies.validateTree(result);return result;
   }
   function save(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,nodes}));cloudSync?.onChange();}catch(e){toast('Storage full or unavailable — export a backup');}}
   function record(previous){undoHistory.push(previous??JSON.stringify(nodes));if(undoHistory.length>40)undoHistory.shift();updateUndo();}
@@ -374,12 +376,12 @@
   function addRoot(){record();const newTask=makeNode('');nodes.push(newTask);save();render();focusTask(newTask.id);}
   function addChild(id){const info=find(id);if(!info)return;record();const child=makeNode('');info.node.children.push(child);info.node.collapsed=false;save();render();focusTask(child.id);}
   function addSibling(id){const info=find(id);if(!info)return;record();const sibling=makeNode('');info.arr.splice(info.index+1,0,sibling);save();render();focusTask(sibling.id);}
-  function indent(id){const info=find(id);if(!info||info.index===0){toast('Place it after a sibling before indenting');return;}record();const previous=info.arr[info.index-1];info.arr.splice(info.index,1);previous.children.push(info.node);previous.collapsed=false;save();render();focusTask(id);}
-  function outdent(id){const info=find(id);if(!info||!info.parent){toast('Already at the top level');return;}const p=find(info.parent.id);if(!p)return;record();info.arr.splice(info.index,1);p.arr.splice(p.index+1,0,info.node);save();render();focusTask(id);}
+  function indent(id){const info=find(id);if(!info||info.index===0){toast('Place it after a sibling before indenting');return;}record();const previous=info.arr[info.index-1];info.arr.splice(info.index,1);previous.children.push(info.node);previous.collapsed=false;if(!confirmDependencySafeMove())return;save();render();focusTask(id);}
+  function outdent(id){const info=find(id);if(!info||!info.parent){toast('Already at the top level');return;}const p=find(info.parent.id);if(!p)return;record();info.arr.splice(info.index,1);p.arr.splice(p.index+1,0,info.node);if(!confirmDependencySafeMove())return;save();render();focusTask(id);}
   function reorder(id,direction){const info=find(id);if(!info)return;const j=info.index+direction;if(j<0||j>=info.arr.length){toast('No more tasks in that direction');return;}record();[info.arr[info.index],info.arr[j]]=[info.arr[j],info.arr[info.index]];save();render();focusTask(id);}
   function setDescendantsCompleted(n,value){n.completed=value;for(const c of n.children)setDescendantsCompleted(c,value);}
   function toggleCompleted(id){const info=find(id);if(!info)return;record();setDescendantsCompleted(info.node,!info.node.completed);save();render();}
-  function deleteNode(id){const info=find(id);if(!info)return;const howMany=1+descendants(info.node).all;if(!confirm(`Delete “${info.node.title||'Untitled'}”${howMany>1?` and its ${howMany-1} child tasks`:''}? You can undo this.`))return;record();info.arr.splice(info.index,1);save();render();toast('Task deleted. Undo is available.');}
+  function deleteNode(id){const info=find(id);if(!info)return;const howMany=1+descendants(info.node).all;if(!confirm(`Delete “${info.node.title||'Untitled'}”${howMany>1?` and its ${howMany-1} child tasks`:''}? You can undo this.`))return;record();const deleted=flatten(info.node.children).map(v=>v.n.id);deleted.push(info.node.id);info.arr.splice(info.index,1);window.TreeDependencies.purgeReferences(nodes,deleted);save();render();toast('Task deleted. Undo is available.');}
   function collapse(id){const info=find(id);if(!info||!info.node.children.length)return;info.node.collapsed=!info.node.collapsed;save();render();}
   function setCollapsed(value){record();function walk(arr){for(const n of arr){n.collapsed=value;walk(n.children)}}walk(nodes);save();render();}
   function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(lastToastTimer);lastToastTimer=setTimeout(()=>el.classList.remove('show'),2700);}
@@ -406,8 +408,9 @@
    });
    function showTaskMenu(id){activeId=id;const info=find(id);if(!info)return;$('taskDialogTitle').textContent=info.node.title||'New task';actionAvailability();$('taskDialog').showModal();}
   function closeDialog(id){const d=$(id);if(d.open)d.close();}
+  function confirmDependencySafeMove(){try{window.TreeDependencies.validateTree(nodes);return true;}catch(e){const previous=undoHistory.pop();if(previous)nodes=JSON.parse(previous);updateUndo();toast('Move blocked: '+e.message);return false;}}
   function isWithin(node,descendantId){return node.id===descendantId||node.children.some(c=>isWithin(c,descendantId));}
-  function moveNode(id,parentId){const info=find(id);if(!info)return;if(parentId===id||isWithin(info.node,parentId))return;const target=parentId?find(parentId):null;if(parentId&&!target)return;record();info.arr.splice(info.index,1);if(target){target.node.children.push(info.node);target.node.collapsed=false;}else nodes.push(info.node);save();render();focusTask(id);toast('Task moved');}
+  function moveNode(id,parentId){const info=find(id);if(!info)return;if(parentId===id||isWithin(info.node,parentId))return;const target=parentId?find(parentId):null;if(parentId&&!target)return;record();info.arr.splice(info.index,1);if(target){target.node.children.push(info.node);target.node.collapsed=false;}else nodes.push(info.node);if(!confirmDependencySafeMove())return;save();render();focusTask(id);toast('Task moved');}
   function openMoveDialog(id){moveId=id;$('moveSearch').value='';renderDestinations();$('moveDialog').showModal();}
   function renderDestinations(){const q=$('moveSearch').value.trim().toLowerCase();const info=find(moveId);if(!info)return;const options=[{id:null,title:'Top level',path:'Move to the root'}];for(const v of flatten()){if(isWithin(info.node,v.n.id))continue;const full=[...v.path,v.n.title].join(' › ');if(q&&!full.toLowerCase().includes(q))continue;options.push({id:v.n.id,title:v.n.title||'Untitled',path:v.path.join(' › ')||'Top level'});}
     $('moveOptions').innerHTML=options.map(o=>`<button class="action" data-destination="${o.id===null?'__root__':escapeText(o.id)}"><span>${escapeText(o.title)}<small>${escapeText(o.path)}</small></span><span aria-hidden="true">›</span></button>`).join('')||'<p class="dialog-note">No destinations found.</p>';
@@ -415,7 +418,7 @@
   function reorderByDrop(sourceId,targetId,position){if(!sourceId||sourceId===targetId)return;const source=find(sourceId),target=find(targetId);if(!source||!target||isWithin(source.node,targetId))return;record();source.arr.splice(source.index,1);const updatedTarget=find(targetId);if(!updatedTarget)return;
     if(position==='child'){updatedTarget.node.children.push(source.node);updatedTarget.node.collapsed=false;}
     else{updatedTarget.arr.splice(updatedTarget.index+(position==='after'?1:0),0,source.node);}
-    save();render();toast('Task moved');
+    if(!confirmDependencySafeMove())return;save();render();toast('Task moved');
   }
   function clearSearch(){searchText='';$('searchInput').value='';$('searchWrap').classList.remove('visible');render();}
   function openSearch(){$('searchWrap').classList.add('visible');$('searchInput').focus();}
@@ -588,20 +591,20 @@
     for(const {node:n,depth,range,explicit} of rows){
       const label=escapeText(n.title||'Untitled task');
       const isParent=n.children.length>0;
-      const text=`<button class="gantt-label ${n.completed?'done':''} ${isParent?'branch':''}" title="${label} · Edit dates" data-plan-edit="${escapeText(n.id)}" style="padding-left:${Math.min(depth,15)*13+4}px">${isParent?'▾ ':''}${label}</button>`;
+      const text=`<button class="gantt-label ${n.completed?'done':''} ${isParent?'branch':''}" title="${label} · Edit dates and predecessors" data-plan-edit="${escapeText(n.id)}" style="padding-left:${Math.min(depth,15)*13+4}px">${isParent?'▾ ':''}${label}</button>`;
       let mark='';
       if(range){const visibleStart=range.start<start?start:range.start,visibleEnd=range.end>end?end:range.end;
         if(visibleStart<=visibleEnd){const x=P.diffDays(start,visibleStart)*dayW,w=(P.diffDays(visibleStart,visibleEnd)+1)*dayW;
-          const summary=range.derived;const draggable=Boolean(explicit)&&!summary;
+          const summary=range.derived||isParent;const draggable=Boolean(explicit)&&!summary;
           mark=`<button class="gantt-bar ${summary?'summary':''} ${n.completed?'completed':''}" style="left:${x+2}px;width:${Math.max(8,w-4)}px" title="${label} · ${range.start} – ${range.end}${summary?' · Dates from children':''}" data-plan-edit="${escapeText(n.id)}" data-bar-id="${escapeText(n.id)}" data-drag="${draggable?'1':'0'}" data-start="${range.start}" data-end="${range.end}" data-dayw="${dayW}" aria-label="${label}: ${range.start} to ${range.end}. Click to edit dates."><span class="gantt-bar-text">${w>90?label:''}</span>${draggable&&w>28?'<span class="bar-resize" aria-hidden="true"></span>':''}</button>`;
         }
       }else mark=`<button class="gantt-no-date" data-plan-edit="${escapeText(n.id)}">+ Set dates</button>`;
-      lines+=`<div class="gantt-line"><div class="gantt-name">${text}<span class="gantt-range">${explicit?shortDate(explicit.start):''}</span></div><div class="gantt-timeline" data-row-id="${escapeText(n.id)}" data-range-start="${start}" data-dayw="${dayW}" style="${timelineStyle}">${mark}</div></div>`;
+      lines+=`<div class="gantt-line"><div class="gantt-name">${text}<span class="gantt-range">${explicit?shortDate(explicit.start):''}</span>${(n.predecessorIds||[]).length?'<button class="gantt-linked" data-plan-edit="'+escapeText(n.id)+'" title="Edit predecessors">⛓</button>':''}</div><div class="gantt-timeline" data-row-id="${escapeText(n.id)}" data-range-start="${start}" data-dayw="${dayW}" style="${timelineStyle}">${mark}</div></div>`;
     }
     const unplanned=rows.filter(r=>!r.range).length;
     host.innerHTML=planToolbar('Gantt · '+monthLabel(start))+`<div class="gantt-shell"><div class="gantt-canvas">${header}${lines||`<div class="plan-empty" style="width:${262+width}px">Your tree is empty. Add a task and give it dates to start planning.</div>`}</div></div>
-      <p class="plan-footnote">${rows.length} tasks · ${unplanned} without dates · Tap a task to schedule it. Drag a dated bar to move it, or its right edge to extend it. Parent task bars can summarise their child dates automatically. Scroll horizontally to see more time.</p>`;
-    const scroller=host.querySelector('.gantt-shell');if(prev){scroller.scrollLeft=sx;scroller.scrollTop=sy;}else{scroller.scrollLeft=Math.max(0,(P.diffDays(start,today)-3)*dayW);}
+      <p class="plan-footnote">${rows.length} tasks · ${unplanned} without dates · Tap a task to schedule it. Drag a dated bar to move it, or its right edge to extend it. Dependency arrows show what must finish first; linked dates move together. Parent bars roll up child dates automatically. Scroll horizontally to see more time.</p>`;
+    const scroller=host.querySelector('.gantt-shell');if(prev){scroller.scrollLeft=sx;scroller.scrollTop=sy;}else{scroller.scrollLeft=Math.max(0,(P.diffDays(start,today)-3)*dayW);}drawDependencyArrows(host.querySelector('.gantt-canvas'),rows,start,end,dayW,width);
   }
   function renderCalendar(host){
     const rows=rowsInScope(),today=P.today(),first=P.weekStart(calendarMonth),last=P.addDays(P.monthStart(P.moveMonth(calendarMonth,1)),-1);
@@ -618,6 +621,65 @@
     const unscheduled=rows.filter(r=>!r.explicit).length;
     host.innerHTML=planToolbar('Calendar · '+heading)+`<div class="calendar-grid">${grid}</div><div class="agenda"><div class="agenda-head"><h3>${escapeText(new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}))}</h3><button class="agenda-add" data-plan-add-date="${selectedDay}">+ Task</button></div><div class="agenda-list">${agenda}</div></div><p class="plan-footnote">${unscheduled} tasks without their own dates do not appear on the calendar. Multi-day tasks appear on every day in their range. Choose a branch to focus on one project.</p>`;
   }
+
+  const D=window.TreeDependencies;
+  function drawDependencyArrows(canvas,rows,start,end,dayW,width){
+    if(!canvas)return;
+    const rowById=new Map(rows.map((r,i)=>[r.node.id,{r,i}]));
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg'),height=60+rows.length*44;
+    svg.setAttribute('class','gantt-link-overlay');svg.setAttribute('width',String(width));svg.setAttribute('height',String(height));svg.setAttribute('viewBox','0 0 '+width+' '+height);
+    svg.setAttribute('aria-hidden','true');
+    const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),head=document.createElementNS(ns,'path');
+    marker.setAttribute('id','tree-dep-arrow');marker.setAttribute('markerWidth','7');marker.setAttribute('markerHeight','7');marker.setAttribute('refX','6');marker.setAttribute('refY','3');marker.setAttribute('orient','auto');head.setAttribute('d','M0 0 L6 3 L0 6 Z');
+    marker.appendChild(head);defs.appendChild(marker);svg.appendChild(defs);
+    for(const [id,{r,i}] of rowById){
+      if(!r.range)continue;
+      for(const predecessorId of (r.node.predecessorIds||[])){
+        const before=rowById.get(predecessorId);
+        if(!before||!before.r.range)continue;
+        const x1=(P.diffDays(start,before.r.range.end)+1)*dayW-3;
+        const x2=P.diffDays(start,r.range.start)*dayW+2;
+        if(x1<0||x1>width||x2<0||x2>width)continue;
+        const y1=60+before.i*44+22,y2=60+i*44+22;
+        const bend=x1+Math.max(8,Math.min(17,(x2-x1)/2));
+        const path=document.createElementNS(ns,'path');
+        path.setAttribute('d','M '+x1+' '+y1+' H '+bend+' V '+y2+' H '+(x2-5));
+        path.setAttribute('marker-end','url(#tree-dep-arrow)');
+        svg.appendChild(path);
+      }
+    }
+    canvas.appendChild(svg);
+  }
+  let stagedPreds=new Set();
+  function predecessorCandidates(){
+    const idx=D.index(nodes),p=idx.parent;
+    const related=(a,b)=>{let cur=p.get(a);while(cur!=null){if(cur===b)return true;cur=p.get(cur);}return false;};
+    const exclude=id=>id===dateEditId||(dateEditId&&(related(id,dateEditId)||related(dateEditId,id)))||(dateCreate&&id===$('dateNewParent').value);
+    return flatten().filter(({n})=>!exclude(n.id));
+  }
+  function renderPredecessorChoices(){
+    const query=$('predecessorSearch').value.trim().toLowerCase(),host=$('predecessorList');
+    host.replaceChildren();
+    const choices=predecessorCandidates().filter(({n,path})=>stagedPreds.has(n.id)||[...path,n.title].join(' ').toLowerCase().includes(query));
+    choices.sort((a,b)=>Number(stagedPreds.has(b.n.id))-Number(stagedPreds.has(a.n.id)));
+    $('predCount').textContent=stagedPreds.size?stagedPreds.size+' linked':'None';
+    for(const {n,path} of choices.slice(0,250)){
+      const label=document.createElement('label');label.className='predecessor-option';
+      const check=document.createElement('input');check.type='checkbox';check.value=n.id;check.checked=stagedPreds.has(n.id);
+      check.addEventListener('change',()=>{
+        if(check.checked&&stagedPreds.size>=100){check.checked=false;$('dateError').textContent='Maximum of 100 predecessors per task.';return;}
+        check.checked?stagedPreds.add(n.id):stagedPreds.delete(n.id);
+        $('dateError').textContent='';renderPredecessorChoices();
+      });
+      const text=document.createElement('span');text.textContent=[...path,n.title||'Untitled'].join(' › ');
+      label.append(check,text);host.appendChild(label);
+    }
+    if(!choices.length){const empty=document.createElement('p');empty.className='predecessor-empty';empty.textContent='No matching tasks.';host.appendChild(empty);}
+    if(choices.length>250){const more=document.createElement('p');more.className='predecessor-empty';more.textContent='Showing first 250 matches. Search to narrow the list.';host.appendChild(more);}
+  }
+  $('predecessorSearch').addEventListener('input',renderPredecessorChoices);
+  $('dateNewParent').addEventListener('change',renderPredecessorChoices);
   function openDates(id,{date=null}={}){
     const info=find(id);if(!info)return;
     dateCreate=false;dateEditId=id;
@@ -625,7 +687,7 @@
     $('dateNewTitleWrap').hidden=true;$('dateNewParentWrap').hidden=true;$('dateNotes').hidden=false;
     const r=P.explicitRange(info.node);
     $('planStart').value=r?.start||date||'';$('planEnd').value=r?.end||date||'';
-    $('dateClear').hidden=false;$('dateError').textContent='';
+    $('dateClear').hidden=false;$('dateError').textContent='';stagedPreds=new Set(info.node.predecessorIds||[]);$('predecessorSearch').value='';renderPredecessorChoices();
     $('dateDialog').showModal();
   }
   function openNewTask(date=null){
@@ -634,7 +696,7 @@
     $('dateNewTitle').value='';
     $('dateNewParent').innerHTML='<option value="">Top level</option>'+flatten().map(({n,depth})=>`<option value="${escapeText(n.id)}" ${selectedBranchId===n.id?'selected':''}>${escapeText('  '.repeat(Math.min(depth,12))+(n.title||'Untitled'))}</option>`).join('');
     $('planStart').value=date||P.today();$('planEnd').value=date||P.today();
-    $('dateClear').hidden=true;$('dateError').textContent='';
+    $('dateClear').hidden=true;$('dateError').textContent='';stagedPreds=new Set();$('predecessorSearch').value='';renderPredecessorChoices();
     $('dateDialog').showModal();$('dateNewTitle').focus();
   }
   function readDates(){let start=$('planStart').value||null,end=$('planEnd').value||null;
@@ -644,20 +706,31 @@
     if(end<start)throw Error('End date must be the same as or after start date.');
     return {startDate:start,endDate:end};
   }
+
   function saveDates(event){event.preventDefault();try{
-    const dates=readDates();
-    if(dateCreate){const title=$('dateNewTitle').value.trim();if(!title)throw Error('Enter a task name.');
-      const pid=$('dateNewParent').value;const dest=pid?find(pid):null;
-      if(pid&&!dest)throw Error('That parent task is no longer available.');
-      record();const task=makeNode(title);Object.assign(task,dates);
-      if(dest){dest.node.children.push(task);dest.node.collapsed=false;}else nodes.push(task);
+    const dates=readDates(),predecessors=[...stagedPreds];
+    let next;
+    if(dateCreate){
+      const title=$('dateNewTitle').value.trim();if(!title)throw Error('Enter a task name.');
+      const pid=$('dateNewParent').value;
+      const draft=JSON.parse(JSON.stringify(nodes));
+      const task=makeNode(title);
+      function locate(list,id){for(const n of list){if(n.id===id)return n;const sub=locate(n.children,id);if(sub)return sub;}return null;}
+      const parent=pid?locate(draft,pid):null;
+      if(pid&&!parent)throw Error('That parent task is no longer available.');
+      if(parent){parent.children.push(task);parent.collapsed=false;}else draft.push(task);
+      next=D.reschedule(draft,task.id,dates,predecessors);
+      record();nodes=next;
       if(!selectedBranchId&&pid)selectedBranchId=pid;
     }else{
       const info=find(dateEditId);if(!info)throw Error('This task no longer exists.');
-      if(info.node.startDate===dates.startDate&&info.node.endDate===dates.endDate){closeDialog('dateDialog');return;}
-      record();Object.assign(info.node,dates);
+      const existing=info.node.predecessorIds||[];
+      if(info.node.startDate===dates.startDate&&info.node.endDate===dates.endDate&&existing.length===predecessors.length&&existing.every(id=>predecessors.includes(id))){closeDialog('dateDialog');return;}
+      next=D.reschedule(nodes,dateEditId,dates,predecessors);
+      record();nodes=next;
     }
-    closeDialog('dateDialog');save();render();toast(dateCreate?'Scheduled task added':'Schedule updated');
+    closeDialog('dateDialog');save();render();
+    toast(dateCreate?'Scheduled task added':'Schedule and dependencies updated · Undo available');
   }catch(e){$('dateError').textContent=e.message;}}
   $('dateNotes').onclick=()=>{if(!dateEditId)return;const id=dateEditId;closeDialog('dateDialog');openNotes(id);};
    $('dateForm').addEventListener('submit',saveDates);
@@ -696,8 +769,7 @@
     const info=find(drag.id);if(!info)return;
     const start=drag.resize?drag.start:P.addDays(drag.start,drag.delta);
     const end=P.addDays(drag.end,drag.delta);
-    record();info.node.startDate=start;info.node.endDate=end;
-    save();render();suppressBarClick=true;setTimeout(()=>suppressBarClick=false,120);toast('Schedule moved · Undo available');
+    try{const next=D.reschedule(nodes,drag.id,{startDate:start,endDate:end});record();nodes=next;save();render();suppressBarClick=true;setTimeout(()=>suppressBarClick=false,120);toast('Schedule and linked tasks updated · Undo available');}catch(e){render();toast(e.message);}
   };
   $('planner').addEventListener('pointerup',finishDrag);
   $('planner').addEventListener('pointercancel',()=>{if(barDrag){barDrag.bar.style.left=barDrag.originalLeft+'px';barDrag.bar.style.width=barDrag.originalWidth+'px';barDrag=null;}});

@@ -7,7 +7,7 @@
   'use strict';
   const clone = x => JSON.parse(JSON.stringify(x));
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const fields = ['title', 'notes', 'completed', 'collapsed', 'startDate', 'endDate'];
+  const fields = ['title', 'notes', 'completed', 'collapsed', 'startDate', 'endDate', 'predecessorIds'];
   function index(tree) {
     const byId = new Map(), shape = [];
     function walk(list, parent) {
@@ -41,10 +41,10 @@
         if(n.notes!==undefined&&(typeof n.notes!=='string'||n.notes.length>20000))throw Error('Invalid task notes in cloud file');
         const notes=n.notes??'';
         const {startDate,endDate}=windowPlanDates(n);
-        return {id:n.id, title:n.title, notes, completed:n.completed, collapsed:n.collapsed, startDate, endDate, children:walk(n.children,depth+1)};
+        return {id:n.id, title:n.title, notes, completed:n.completed, collapsed:n.collapsed, startDate, endDate, predecessorIds:n.predecessorIds??[], children:walk(n.children,depth+1)};
       });
     }
-    return walk(tree,0);
+    const normalized=walk(tree,0); if(typeof globalThis!=='undefined'&&globalThis.TreeDependencies)globalThis.TreeDependencies.validateTree(normalized); return normalized;
   }
   function merge(base, local, remote) {
     base=validate(base);local=validate(local);remote=validate(remote);
