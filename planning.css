@@ -38,3 +38,22 @@
 .date-form .two-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}.date-form .hint{font-size:12px;color:var(--muted);line-height:1.55;margin:1px 0 14px}.date-buttons{display:flex;gap:8px}.date-buttons button{padding:11px 13px;background:var(--surface2);border:1px solid var(--border);color:var(--text);border-radius:9px;flex:1}.date-buttons .primary{background:var(--accent);color:#122016;border-color:var(--accent);font-weight:750}.date-error{color:var(--danger);font-size:12px;min-height:19px;margin-top:-8px;margin-bottom:7px}
 @media(min-width:1100px){.app{max-width:1300px}}
 @media(max-width:600px){.view-tabs{margin:5px 8px 0;display:flex;width:calc(100% - 16px)}.view-tab{flex:1;padding:10px 7px;min-width:0;font-size:13px}.planner{padding:0 5px}.plan-toolbar{gap:6px}.plan-toolbar select{width:100%;max-width:none;order:2}.plan-toolbar .toolbar-heading{min-width:90px}.plan-toolbar .zoom-actions{order:3}.plan-toolbar .nav-actions{margin-left:auto}.gantt-name{min-width:158px;width:158px;flex-basis:158px}.gantt-name .gantt-label{font-size:12px}.gantt-range{display:none}.gantt-line{height:43px}.calendar-day{min-height:82px;padding:4px 2px;gap:3px}.calendar-day-number{font-size:11px}.calendar-chip{font-size:10px;padding:3px}.calendar-more{font-size:10px}.date-form .two-cols{grid-template-columns:1fr}}
+
+/* v4 dependency editor and Gantt connector arrows */
+.gantt-canvas{position:relative;--gantt-name-w:262px}
+.gantt-link-overlay{position:absolute;left:var(--gantt-name-w);top:0;pointer-events:none;z-index:2;overflow:visible}
+.gantt-link-overlay path{stroke:#e9b77e;stroke-width:1.7;fill:none;opacity:.77}
+.gantt-link-overlay marker path{fill:#e9b77e;stroke:none;opacity:1}
+.gantt-bar{z-index:3}.gantt-name{z-index:4}.gantt-header{z-index:6}.gantt-header .gantt-name{z-index:7}
+.gantt-linked{font-size:12px;flex:none;color:#e4b27b;padding:0 3px;cursor:pointer;border:0;background:none}
+.predecessor-editor{margin:6px 0 14px;border:1px solid var(--border);border-radius:10px;padding:11px 12px}
+.predecessor-heading{display:flex;align-items:center;justify-content:space-between;gap:9px;margin-bottom:9px}
+.predecessor-heading strong{font-size:13px;color:var(--text)}
+.predecessor-editor .predecessor-search{font:inherit;font-size:14px;width:100%;min-height:38px;padding:7px 9px;margin:0 0 7px;background:var(--bg);border:1px solid var(--border);border-radius:8px;color:var(--text)}
+.predecessor-list{max-height:155px;overflow-y:auto;border:1px solid var(--border);border-radius:8px}
+.predecessor-option{display:flex;gap:9px;align-items:flex-start;padding:9px 7px;margin:0;border-bottom:1px solid var(--border);font-size:12px;line-height:1.4;color:var(--text);cursor:pointer}
+.predecessor-option:last-child{border-bottom:0}.predecessor-option:hover{background:var(--surface2)}
+.predecessor-option input{flex:none;accent-color:var(--accent);width:17px;height:17px;margin:0}
+.predecessor-option span{overflow-wrap:anywhere}.predecessor-empty{color:var(--muted);font-size:12px;margin:8px}
+.predecessor-note{color:var(--muted);font-size:12px;line-height:1.5;margin:8px 0 0}
+@media(max-width:600px){.gantt-canvas{--gantt-name-w:158px}.predecessor-list{max-height:180px}}
