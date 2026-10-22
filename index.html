@@ -768,8 +768,7 @@
     const info=find(drag.id);if(!info)return;
     const start=drag.resize?drag.start:P.addDays(drag.start,drag.delta);
     const end=P.addDays(drag.end,drag.delta);
-    record();info.node.startDate=start;info.node.endDate=end;
-    save();render();suppressBarClick=true;setTimeout(()=>suppressBarClick=false,120);toast('Schedule moved · Undo available');
+    try{const next=D.reschedule(nodes,drag.id,{startDate:start,endDate:end});record();nodes=next;save();render();suppressBarClick=true;setTimeout(()=>suppressBarClick=false,120);toast('Schedule and linked tasks updated · Undo available');}catch(e){render();toast(e.message);}
   };
   $('planner').addEventListener('pointerup',finishDrag);
   $('planner').addEventListener('pointercancel',()=>{if(barDrag){barDrag.bar.style.left=barDrag.originalLeft+'px';barDrag.bar.style.width=barDrag.originalWidth+'px';barDrag=null;}});
