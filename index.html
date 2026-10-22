@@ -65,6 +65,18 @@
     .task-input{background:none;border:0;color:var(--text);font-family:inherit;font-size:16px;flex:1;min-width:45px;min-height:36px;outline:none;padding:7px 2px 5px 5px;line-height:1.35;border-radius:5px;overflow:hidden;resize:none;word-break:break-word;display:block}
     .task-input::placeholder{color:#5f7363}
     .tree-row.completed .task-input{text-decoration:line-through;color:#788c7b}
+    .note-btn{width:29px;min-width:29px;height:34px;border:0;border-radius:8px;background:transparent;color:var(--muted);display:grid;place-items:center;flex:none;opacity:.27;padding:0}
+    .note-btn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+    .note-btn.has-notes{opacity:1;color:var(--accent)}
+    .note-btn:hover,.note-btn:focus-visible{opacity:1;background:var(--surface2);color:var(--text)}
+    .tree-row:hover .note-btn,.tree-row:focus-within .note-btn{opacity:1}
+    .notes-editor{padding:18px 20px 20px}
+    .notes-editor label{display:block;color:var(--muted);font-size:13px;font-weight:650;margin-bottom:10px}
+    #taskNotes{display:block;width:100%;min-height:220px;resize:vertical;font:inherit;font-size:15px;line-height:1.55;letter-spacing:normal;background:var(--bg);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:12px;outline:none}
+    #taskNotes:focus{border-color:var(--accent)}
+    .notes-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:11px;font-size:12px;color:var(--muted)}
+    .notes-tip{font-size:12px;line-height:1.5;color:var(--muted);margin:10px 0 0}
+    .date-notes-btn{display:block;margin:4px 0 10px;padding:9px 12px;background:var(--surface2);color:var(--text);border:1px solid var(--border);border-radius:9px;text-align:left}
     .descendant-count{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;margin:0 4px;white-space:nowrap}
     .mini-btn{height:34px;width:32px;opacity:.15;transition:opacity .12s}
     .mini-btn svg{width:17px;height:17px;stroke:currentColor;stroke-width:1.9;fill:none;stroke-linecap:round;stroke-linejoin:round}
@@ -137,7 +149,7 @@
       .tree-row{gap:0;min-height:51px;padding-left:calc(1px + var(--depth)*18px);min-width:max(100%,calc(270px + var(--depth)*18px))}
       .tree-row[aria-level="1"] .task-input{font-size:16px}
       .caret{width:24px}.check{width:30px}.task-input{font-size:15px;padding-left:3px}
-      .mini-btn{opacity:.8;width:31px}.grip{display:none}
+      .mini-btn{opacity:.8;width:31px}.note-btn{width:28px;min-width:28px;opacity:.75}.note-btn.has-notes{opacity:1}.grip{display:none}
       .descendant-count{font-size:10px;margin:0 2px}
       .footer-hint{display:none}
     }
@@ -170,7 +182,8 @@
 <dialog id="taskDialog" aria-labelledby="taskDialogTitle">
   <div class="dialog-top"><h3 id="taskDialogTitle">Task actions</h3><button class="dialog-close" data-close="taskDialog" aria-label="Close">×</button></div>
   <div class="dialog-content" id="taskActions">
-    <button class="action" data-task-action="dates">Schedule / edit dates <small>Gantt + Calendar</small></button>
+    <button class="action" data-task-action="notes">Add / edit notes <small>Saved automatically</small></button>
+     <button class="action" data-task-action="dates">Schedule / edit dates <small>Gantt + Calendar</small></button>
     <button class="action" data-task-action="child">Add child task <small>⌘/Ctrl + Enter</small></button>
     <button class="action" data-task-action="sibling">Add sibling <small>Enter</small></button>
     <button class="action" data-task-action="indent">Indent under previous sibling <small>Tab</small></button>
@@ -181,12 +194,22 @@
     <button class="action danger" data-task-action="delete">Delete task and its children</button>
   </div>
 </dialog>
+<dialog id="notesDialog" aria-labelledby="notesDialogTitle">
+  <div class="dialog-top"><h3 id="notesDialogTitle">Task notes</h3><button class="dialog-close" data-close="notesDialog" aria-label="Close notes">×</button></div>
+  <div class="notes-editor">
+    <label for="taskNotes">Notes / details</label>
+    <textarea id="taskNotes" maxlength="20000" placeholder="Add context, ideas, instructions, meeting notes, or links…" aria-label="Task notes" spellcheck="true"></textarea>
+    <div class="notes-footer"><span id="notesCount">0 / 20,000 characters</span><span>Saved locally as you type</span></div>
+    <p class="notes-tip">Notes belong to this task. They're included in backups and OneDrive sync, with conflict protection.</p>
+  </div>
+</dialog>
 <dialog id="dateDialog" aria-labelledby="dateDialogTitle">
   <div class="dialog-top"><h3 id="dateDialogTitle">Schedule task</h3><button class="dialog-close" data-close="dateDialog" aria-label="Close">×</button></div>
   <form id="dateForm" class="date-form">
     <div id="dateNewTitleWrap" hidden><label for="dateNewTitle">Task name</label><input id="dateNewTitle" placeholder="e.g. Review leads analysis" maxlength="2000"></div>
     <div id="dateNewParentWrap" hidden><label for="dateNewParent">Parent task / project</label><select id="dateNewParent"></select></div>
-    <div class="two-cols"><div><label for="planStart">Start date</label><input id="planStart" type="date"></div><div><label for="planEnd">End / due date</label><input id="planEnd" type="date"></div></div>
+    <button id="dateNotes" class="date-notes-btn" type="button" hidden>Open task notes ↗</button>
+     <div class="two-cols"><div><label for="planStart">Start date</label><input id="planStart" type="date"></div><div><label for="planEnd">End / due date</label><input id="planEnd" type="date"></div></div>
     <p class="hint">Leave both dates blank for an unscheduled task. If you set one date, the task is scheduled for that day. Undated parent tasks show their children's overall date range in Gantt.</p>
     <div class="date-error" id="dateError" role="alert"></div>
     <div class="date-buttons"><button id="dateClear" type="button">Clear dates</button><button class="primary" type="submit">Save schedule</button></div>
@@ -224,7 +247,7 @@
     <button class="action danger" id="clearButton">Delete all tasks</button>
     <p class="dialog-note">Edits save immediately on this device. OneDrive sync needs an internet connection and a Microsoft sign-in. If two devices change the same task or restructure the tree independently, Tree Task asks before replacing anything. Make regular JSON backups too.</p>
   </div>
-  <div class="version">Tree Task · prototype 3.0 · Tree + Gantt + Calendar</div>
+  <div class="version">Tree Task · prototype 3.1 · Tree + Gantt + Calendar + Notes</div>
 </dialog>
 <dialog id="moveDialog" aria-labelledby="moveTitle">
   <div class="dialog-top"><h3 id="moveTitle">Move task under…</h3><button class="dialog-close" data-close="moveDialog" aria-label="Close">×</button></div>
@@ -272,7 +295,7 @@
   const SAMPLE_FLAG = 'tree-task.sample-notice';
   const $ = id => document.getElementById(id);
   const ids = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 't-'+Date.now()+'-'+Math.random().toString(36).slice(2);
-  const makeNode = (title='', children=[]) => ({id:ids(), title, completed:false, collapsed:false, startDate:null, endDate:null, children});
+  const makeNode = (title='', children=[]) => ({id:ids(), title, notes:'', completed:false, collapsed:false, startDate:null, endDate:null, children});
   const examples = () => [
     makeNode('Example project', [makeNode('Project launch', [makeNode('Plan the work', [makeNode('Review the checklist')]),makeNode('Prepare for launch')])]),
     makeNode('Example tasks', [makeNode('Getting started', [makeNode('Add your first task'),makeNode('Try the planning views')]),makeNode('Connect OneDrive when ready')])
@@ -301,7 +324,7 @@
         total++;if(total>10000)throw Error('Maximum 10,000 tasks per import.');
         const id=(typeof n.id==='string'&&n.id.length<200&&!seen.has(n.id))?n.id:ids();seen.add(id);
         const dates=window.TreePlanning.normalizedDates(n);
-        return {id,title:String(n.title??'').slice(0,2000),completed:!!n.completed,collapsed:!!n.collapsed,...dates,children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
+        return {id,title:String(n.title??'').slice(0,2000),notes:typeof n.notes==='string'?n.notes.slice(0,20000):'',completed:!!n.completed,collapsed:!!n.collapsed,...dates,children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
       });
     }; return walk(value,0);
   }
@@ -315,7 +338,7 @@
   function descendants(n){return n.children.reduce((a,c)=>{const sub=descendants(c);return {all:a.all+1+sub.all,done:a.done+(c.completed?1:0)+sub.done};},{all:0,done:0});}
   function flatten(arr=nodes,depth=0,path=[]){return arr.flatMap(n=>[{n,depth,path},...flatten(n.children,depth+1,[...path,n.title||'Untitled'])]);}
   function escapeText(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
-  function matchesInSubtree(node,q){return node.title.toLowerCase().includes(q)||node.children.some(n=>matchesInSubtree(n,q));}
+  function matchesInSubtree(node,q){return node.title.toLowerCase().includes(q)||(node.notes||'').toLowerCase().includes(q)||node.children.some(n=>matchesInSubtree(n,q));}
   function render(){
     const tree=$('tree');const q=searchText.trim().toLowerCase();const parts=[];
     function walk(arr,depth=0, ancestorMatches=false){
@@ -328,11 +351,12 @@
           <button class="check ${n.completed?'checked':''}" data-action="toggle" aria-label="${n.completed?'Mark incomplete':'Complete'} ${escapeText(n.title)}" aria-pressed="${n.completed}"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.2"/>${n.completed?'<path d="m7.5 12 3 3 6-6" stroke-width="2.1"/>':''}</svg></button>
           <textarea rows="1" class="task-input" data-id="${escapeText(n.id)}" placeholder="New task…" aria-label="Task title at level ${level}" maxlength="2000" spellcheck="true">${escapeText(n.title)}</textarea>
           ${hasKids?`<span class="descendant-count" title="Completed child tasks">${sub.done}/${sub.all}</span>`:''}
+           <button class="note-btn${n.notes?' has-notes':''}" data-action="notes" aria-label="${n.notes?'Edit notes for':'Add notes to'} ${escapeText(n.title||'Untitled task')}" title="${n.notes?'Edit task notes':'Add task notes'}"><svg viewBox="0 0 24 24"><path d="M6 3.5h9l4 4V20H6z"/><path d="M15 3.5V8h4M9 12h7M9 16h6"/></svg></button>
           <button class="mini-btn" data-action="add-child" aria-label="Add child to ${escapeText(n.title)}" title="Add child"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button>
           <button class="mini-btn" data-action="menu" aria-label="Actions for ${escapeText(n.title)}" title="Actions"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg></button>
           <button class="grip" data-action="drag" draggable="true" aria-label="Drag to move" title="Drag to reorder">⠿</button>
         </div>`);
-        if((!n.collapsed||q)&&n.children.length)walk(n.children,depth+1,ancestorMatches||n.title.toLowerCase().includes(q));
+        if((!n.collapsed||q)&&n.children.length)walk(n.children,depth+1,ancestorMatches||n.title.toLowerCase().includes(q)||(n.notes||'').toLowerCase().includes(q));
       }
     }
     walk(nodes);
@@ -360,7 +384,27 @@
   function setCollapsed(value){record();function walk(arr){for(const n of arr){n.collapsed=value;walk(n.children)}}walk(nodes);save();render();}
   function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(lastToastTimer);lastToastTimer=setTimeout(()=>el.classList.remove('show'),2700);}
   function actionAvailability(){const info=find(activeId);if(!info)return;const buttons=$('taskActions').querySelectorAll('[data-task-action]');for(const b of buttons){const type=b.dataset.taskAction;b.disabled=(type==='indent'&&info.index===0)||(type==='outdent'&&!info.parent)||(type==='up'&&info.index===0)||(type==='down'&&info.index===info.arr.length-1);}}
-  function showTaskMenu(id){activeId=id;const info=find(id);if(!info)return;$('taskDialogTitle').textContent=info.node.title||'New task';actionAvailability();$('taskDialog').showModal();}
+  let noteEditSnapshot=null, noteEditRecorded=false;
+   function noteCount(){const text=$('taskNotes').value;$('notesCount').textContent=text.length.toLocaleString()+' / 20,000 characters';}
+   function openNotes(id){
+     const info=find(id);if(!info)return;
+     activeId=id;noteEditSnapshot=JSON.stringify(nodes);noteEditRecorded=false;
+     $('notesDialogTitle').textContent=info.node.title||'Untitled task';
+     $('taskNotes').value=info.node.notes||'';noteCount();
+     $('notesDialog').showModal();$('taskNotes').focus();
+   }
+   $('taskNotes').addEventListener('input',()=>{
+     const info=find(activeId);if(!info)return;
+     const text=$('taskNotes').value.slice(0,20000);noteCount();
+     if(text===info.node.notes)return;
+     if(!noteEditRecorded){record(noteEditSnapshot);noteEditRecorded=true;}
+     info.node.notes=text;save();
+   });
+   $('notesDialog').addEventListener('close',()=>{
+     if(noteEditRecorded){render();cloudSync?.schedule(200);}
+     noteEditSnapshot=null;noteEditRecorded=false;
+   });
+   function showTaskMenu(id){activeId=id;const info=find(id);if(!info)return;$('taskDialogTitle').textContent=info.node.title||'New task';actionAvailability();$('taskDialog').showModal();}
   function closeDialog(id){const d=$(id);if(d.open)d.close();}
   function isWithin(node,descendantId){return node.id===descendantId||node.children.some(c=>isWithin(c,descendantId));}
   function moveNode(id,parentId){const info=find(id);if(!info)return;if(parentId===id||isWithin(info.node,parentId))return;const target=parentId?find(parentId):null;if(parentId&&!target)return;record();info.arr.splice(info.index,1);if(target){target.node.children.push(info.node);target.node.collapsed=false;}else nodes.push(info.node);save();render();focusTask(id);toast('Task moved');}
@@ -424,7 +468,7 @@
     if(rerender)render();
   }
   function commitInput(input){finishEditing(input,true);}
-  $('tree').addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(!button)return;const id=button.closest('.tree-row')?.dataset.id;if(!id)return;switch(button.dataset.action){case 'collapse':collapse(id);break;case 'toggle':toggleCompleted(id);break;case 'add-child':addChild(id);break;case 'menu':showTaskMenu(id);break;}});
+  $('tree').addEventListener('click',e=>{const button=e.target.closest('[data-action]');if(!button)return;const id=button.closest('.tree-row')?.dataset.id;if(!id)return;switch(button.dataset.action){case 'collapse':collapse(id);break;case 'toggle':toggleCompleted(id);break;case 'add-child':addChild(id);break;case 'notes':openNotes(id);break;case 'menu':showTaskMenu(id);break;}});
   $('tree').addEventListener('focusin',e=>{if(e.target.classList?.contains('task-input')){
     e.target.dataset.beforeSnapshot=JSON.stringify(nodes);
     e.target.dataset.originalTitle=find(e.target.dataset.id)?.node.title??'';
@@ -446,7 +490,7 @@
   $('tree').addEventListener('dragover',e=>{if(!dragSource)return;const row=e.target.closest('.tree-row');if(!row)return;e.preventDefault();const box=row.getBoundingClientRect();const ratio=(e.clientY-box.top)/box.height;const pos=ratio<.25?'before':ratio>.75?'after':'child';for(const node of $('tree').querySelectorAll('.drag-before,.drag-after,.drag-child'))node.classList.remove('drag-before','drag-after','drag-child');row.classList.add('drag-'+pos);dropTarget={id:row.dataset.id,pos};e.dataTransfer.dropEffect='move';});
   $('tree').addEventListener('drop',e=>{if(!dragSource||!dropTarget)return;e.preventDefault();reorderByDrop(dragSource,dropTarget.id,dropTarget.pos);dragSource=null;dropTarget=null;});
   $('tree').addEventListener('dragend',()=>{dragSource=null;dropTarget=null;for(const n of $('tree').querySelectorAll('.drag-before,.drag-after,.drag-child'))n.classList.remove('drag-before','drag-after','drag-child');});
-  $('taskActions').addEventListener('click',e=>{const btn=e.target.closest('[data-task-action]');if(!btn||btn.disabled)return;const action=btn.dataset.taskAction;closeDialog('taskDialog');switch(action){case 'dates':openDates(activeId);break;case 'child':addChild(activeId);break;case 'sibling':addSibling(activeId);break;case 'indent':indent(activeId);break;case 'outdent':outdent(activeId);break;case 'up':reorder(activeId,-1);break;case 'down':reorder(activeId,1);break;case 'move':openMoveDialog(activeId);break;case 'delete':deleteNode(activeId);break;}});
+  $('taskActions').addEventListener('click',e=>{const btn=e.target.closest('[data-task-action]');if(!btn||btn.disabled)return;const action=btn.dataset.taskAction;closeDialog('taskDialog');switch(action){case 'notes':openNotes(activeId);break;case 'dates':openDates(activeId);break;case 'child':addChild(activeId);break;case 'sibling':addSibling(activeId);break;case 'indent':indent(activeId);break;case 'outdent':outdent(activeId);break;case 'up':reorder(activeId,-1);break;case 'down':reorder(activeId,1);break;case 'move':openMoveDialog(activeId);break;case 'delete':deleteNode(activeId);break;}});
   $('moveSearch').addEventListener('input',renderDestinations);
   $('moveOptions').addEventListener('click',e=>{const b=e.target.closest('[data-destination]');if(!b)return;const id=b.dataset.destination==='__root__'?null:b.dataset.destination;closeDialog('moveDialog');moveNode(moveId,id);});
   for(const button of document.querySelectorAll('[data-close]'))button.addEventListener('click',()=>closeDialog(button.dataset.close));
@@ -578,7 +622,7 @@
     const info=find(id);if(!info)return;
     dateCreate=false;dateEditId=id;
     $('dateDialogTitle').textContent=info.node.title||'Schedule task';
-    $('dateNewTitleWrap').hidden=true;$('dateNewParentWrap').hidden=true;
+    $('dateNewTitleWrap').hidden=true;$('dateNewParentWrap').hidden=true;$('dateNotes').hidden=false;
     const r=P.explicitRange(info.node);
     $('planStart').value=r?.start||date||'';$('planEnd').value=r?.end||date||'';
     $('dateClear').hidden=false;$('dateError').textContent='';
@@ -586,7 +630,7 @@
   }
   function openNewTask(date=null){
     dateCreate=true;dateEditId=null;$('dateDialogTitle').textContent='Add scheduled task';
-    $('dateNewTitleWrap').hidden=false;$('dateNewParentWrap').hidden=false;
+    $('dateNewTitleWrap').hidden=false;$('dateNewParentWrap').hidden=false;$('dateNotes').hidden=true;
     $('dateNewTitle').value='';
     $('dateNewParent').innerHTML='<option value="">Top level</option>'+flatten().map(({n,depth})=>`<option value="${escapeText(n.id)}" ${selectedBranchId===n.id?'selected':''}>${escapeText('  '.repeat(Math.min(depth,12))+(n.title||'Untitled'))}</option>`).join('');
     $('planStart').value=date||P.today();$('planEnd').value=date||P.today();
@@ -615,7 +659,8 @@
     }
     closeDialog('dateDialog');save();render();toast(dateCreate?'Scheduled task added':'Schedule updated');
   }catch(e){$('dateError').textContent=e.message;}}
-  $('dateForm').addEventListener('submit',saveDates);
+  $('dateNotes').onclick=()=>{if(!dateEditId)return;const id=dateEditId;closeDialog('dateDialog');openNotes(id);};
+   $('dateForm').addEventListener('submit',saveDates);
   $('dateClear').onclick=()=>{$('planStart').value='';$('planEnd').value='';$('dateError').textContent='';};
   document.querySelectorAll('.view-tab').forEach(button=>button.onclick=()=>switchView(button.dataset.view));
   $('planner').addEventListener('change',e=>{if(e.target.id==='branchFilter'){selectedBranchId=e.target.value;renderPlanner();}});
@@ -661,7 +706,7 @@
   cloudSync=new window.TreeOneDrive({
     getNodes:()=>nodes,
     setNodes:setFromCloud,
-    isEditing:()=>Boolean(document.activeElement?.classList?.contains('task-input'))||$('dateDialog').open,
+    isEditing:()=>Boolean(document.activeElement?.classList?.contains('task-input'))||$('dateDialog').open||$('notesDialog').open,
     status:setCloudStatus,
     conflict:showConflict,
     closeConflict:()=>closeDialog('conflictDialog')
