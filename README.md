@@ -1,6 +1,17 @@
-# Tree Task 3.0 — Tree, Gantt, Calendar + Offline-first OneDrive sync
+# Tree Task 4.0 — Gantt dependencies, cascading schedules + offline-first OneDrive sync
 
 **Everything is one task tree.** The same tasks appear in Tree, Gantt and Calendar views. This release extends the existing offline-first OneDrive prototype with native date planning; it does not create a separate project/task type. No database, paid backend, server-side credentials or subscription needed. It stores a single JSON file in your OneDrive application's folder (`Apps/Tree Task/tree-task.json`, exact folder name follows the Microsoft Entra app name).
+
+## New in 4.0 — Gantt dependencies and cascading dates
+
+- Edit a scheduled task in Gantt or Calendar to add one or more **predecessor** tasks. A dependency means **finish-to-start**: the successor cannot start until the day after its predecessor ends.
+- Gantt shows dependency links as connector arrows, including between different projects when both rows are visible. Parent and summary bars use child date rollups and cannot be dragged as regular bars; edit a parent's own dates in its schedule form.
+- Moving a task forward or backward shifts all dated downstream tasks by the same number of calendar days, preserving each task's original spacing where other predecessors permit it. Resizing an end date also cascades. Converging dependencies move a successor only once, not twice.
+- Adding a predecessor that finishes after the successor would start automatically pushes that successor and its downstream work forward. Manual edits that cross predecessor dates are also adjusted to the earliest valid start. Undated tasks keep their links but are not automatically dated.
+- Parent dates always reflect the full span of their dated child tasks; changes to a child's summary range cascade to tasks linked after that parent.
+- Reject direct/indirect circular links, task-to-self and ancestor/descendant dependency links. Deleting tasks removes stale predecessor references. Undo restores the entire prior schedule in one action.
+- Dependencies save offline and survive JSON backup, import/export and OneDrive three-way merge. Concurrent incompatible dependency/date changes trigger the existing conflict flow. **Update all devices before editing dependencies; older versions may erase new fields. Export a backup first.**
+- This version implements finish-to-start dependencies with zero lag. Business-day calendars, lead/lag settings and critical-path highlighting are not included.
 
 ## New in 3.1 — Notes
 
@@ -20,7 +31,7 @@
 - **Offline and cloud:** date changes save locally, are included in JSON backups and recovery copies, undo properly restores them, and OneDrive merges dates as individual fields. Conflicting changes are reviewed instead of blindly overwritten. Invalid combinations (e.g. merged end before start) are blocked.
 - **Compatibility:** older local tasks and OneDrive JSON without date fields load as unscheduled tasks. Existing `tree-task.v1` local storage and the OneDrive `tree-task.json` location remain the same. **Upgrade Tree Task on both devices before creating schedule data:** older v2 browser clients cannot recognise the date fields and could erase them on re-save.
 
-**Not included yet:** task dependencies / predecessor arrows, automatic critical path, resource assignment, native Outlook/Apple calendar subscriptions, and background sync when the app is closed. These are potential future enhancements, not features of this version.
+**Not included yet:** automatic critical path, resource assignment, native Outlook/Apple calendar subscriptions, and background sync when the app is closed. These are potential future enhancements, not features of this version.
 
 ## What is implemented
 
