@@ -2,6 +2,15 @@
 
 **Everything is one task tree.** The same tasks appear in Tree, Gantt and Calendar views. This release extends the existing offline-first OneDrive prototype with native date planning; it does not create a separate project/task type. No database, paid backend, server-side credentials or subscription needed. It stores a single JSON file in your OneDrive application's folder (`Apps/Tree Task/tree-task.json`, exact folder name follows the Microsoft Entra app name).
 
+## New in 3.1 — Notes
+
+- Each task has its own plain-text notes (up to 20,000 characters), regardless of nesting level. Click the document icon beside any task, or open its actions (···) → **Add / edit notes**.
+- Notes save to the existing offline task tree as you type. Closing the notes editor returns to the tree. One edit session creates a single undo entry.
+- Search finds notes as well as titles. A highlighted document icon indicates a task with notes.
+- In Gantt or Calendar, open a task's schedule editor, then choose **Open task notes**.
+- Notes are included in JSON imports/exports, restore points and OneDrive sync. OneDrive merges the notes field independently; if both devices edit the same notes differently, Tree Task asks you to resolve the conflict instead of silently overwriting either.
+- Existing task trees with no notes remain compatible. **Update all devices before editing task notes.** Older versions can remove unknown notes fields when saving or syncing. Export a JSON backup before upgrading.
+
 ## New in 3.0 — Planning
 
 - **Tree view:** all existing unlimited nested work breakdown tasks, fast sibling/child entry and reordering.
@@ -69,7 +78,7 @@ Do not place real task data, exported JSON backups, or secrets in the publicly h
 
 ## File layout
 
-- `index.html`: tree UI, task/date editor, calendar and Gantt rendering, plus sync controls.
+- `index.html`: tree UI, task/notes/date editor, calendar and Gantt rendering, plus sync controls.
 - `planning.css`: responsive Gantt/calendar styling.
 - `planning-core.js`: date-only arithmetic, parent rollup and calendar-day selection, with tests.
 - `sync-merge.js`: pure, tested three-way merge and cloud data validation.
