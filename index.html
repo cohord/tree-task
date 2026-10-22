@@ -620,6 +620,65 @@
     const unscheduled=rows.filter(r=>!r.explicit).length;
     host.innerHTML=planToolbar('Calendar · '+heading)+`<div class="calendar-grid">${grid}</div><div class="agenda"><div class="agenda-head"><h3>${escapeText(new Date(selectedDay+'T12:00:00Z').toLocaleDateString(undefined,{weekday:'long',day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}))}</h3><button class="agenda-add" data-plan-add-date="${selectedDay}">+ Task</button></div><div class="agenda-list">${agenda}</div></div><p class="plan-footnote">${unscheduled} tasks without their own dates do not appear on the calendar. Multi-day tasks appear on every day in their range. Choose a branch to focus on one project.</p>`;
   }
+
+  const D=window.TreeDependencies;
+  function drawDependencyArrows(canvas,rows,start,end,dayW,width){
+    if(!canvas)return;
+    const rowById=new Map(rows.map((r,i)=>[r.node.id,{r,i}]));
+    const ns='http://www.w3.org/2000/svg';
+    const svg=document.createElementNS(ns,'svg'),height=60+rows.length*44;
+    svg.setAttribute('class','gantt-link-overlay');svg.setAttribute('width',String(width));svg.setAttribute('height',String(height));svg.setAttribute('viewBox','0 0 '+width+' '+height);
+    svg.setAttribute('aria-hidden','true');
+    const defs=document.createElementNS(ns,'defs'),marker=document.createElementNS(ns,'marker'),head=document.createElementNS(ns,'path');
+    marker.setAttribute('id','tree-dep-arrow');marker.setAttribute('markerWidth','7');marker.setAttribute('markerHeight','7');marker.setAttribute('refX','6');marker.setAttribute('refY','3');marker.setAttribute('orient','auto');head.setAttribute('d','M0 0 L6 3 L0 6 Z');
+    marker.appendChild(head);defs.appendChild(marker);svg.appendChild(defs);
+    for(const [id,{r,i}] of rowById){
+      if(!r.range)continue;
+      for(const predecessorId of (r.node.predecessorIds||[])){
+        const before=rowById.get(predecessorId);
+        if(!before||!before.r.range)continue;
+        const x1=(P.diffDays(start,before.r.range.end)+1)*dayW-3;
+        const x2=P.diffDays(start,r.range.start)*dayW+2;
+        if(x1<0||x1>width||x2<0||x2>width)continue;
+        const y1=60+before.i*44+22,y2=60+i*44+22;
+        const bend=x1+Math.max(8,Math.min(17,(x2-x1)/2));
+        const path=document.createElementNS(ns,'path');
+        path.setAttribute('d','M '+x1+' '+y1+' H '+bend+' V '+y2+' H '+(x2-5));
+        path.setAttribute('marker-end','url(#tree-dep-arrow)');
+        svg.appendChild(path);
+      }
+    }
+    canvas.appendChild(svg);
+  }
+  let stagedPreds=new Set();
+  function predecessorCandidates(){
+    const idx=D.index(nodes),p=idx.parent;
+    const related=(a,b)=>{let cur=p.get(a);while(cur!=null){if(cur===b)return true;cur=p.get(cur);}return false;};
+    const exclude=id=>id===dateEditId||(dateEditId&&(related(id,dateEditId)||related(dateEditId,id)))||(dateCreate&&id===$('dateNewParent').value);
+    return flatten().filter(({n})=>!exclude(n.id));
+  }
+  function renderPredecessorChoices(){
+    const query=$('predecessorSearch').value.trim().toLowerCase(),host=$('predecessorList');
+    host.replaceChildren();
+    const choices=predecessorCandidates().filter(({n,path})=>stagedPreds.has(n.id)||[...path,n.title].join(' ').toLowerCase().includes(query));
+    choices.sort((a,b)=>Number(stagedPreds.has(b.n.id))-Number(stagedPreds.has(a.n.id)));
+    $('predCount').textContent=stagedPreds.size?stagedPreds.size+' linked':'None';
+    for(const {n,path} of choices.slice(0,250)){
+      const label=document.createElement('label');label.className='predecessor-option';
+      const check=document.createElement('input');check.type='checkbox';check.value=n.id;check.checked=stagedPreds.has(n.id);
+      check.addEventListener('change',()=>{
+        if(check.checked&&stagedPreds.size>=100){check.checked=false;$('dateError').textContent='Maximum of 100 predecessors per task.';return;}
+        check.checked?stagedPreds.add(n.id):stagedPreds.delete(n.id);
+        $('dateError').textContent='';renderPredecessorChoices();
+      });
+      const text=document.createElement('span');text.textContent=[...path,n.title||'Untitled'].join(' › ');
+      label.append(check,text);host.appendChild(label);
+    }
+    if(!choices.length){const empty=document.createElement('p');empty.className='predecessor-empty';empty.textContent='No matching tasks.';host.appendChild(empty);}
+    if(choices.length>250){const more=document.createElement('p');more.className='predecessor-empty';more.textContent='Showing first 250 matches. Search to narrow the list.';host.appendChild(more);}
+  }
+  $('predecessorSearch').addEventListener('input',renderPredecessorChoices);
+  $('dateNewParent').addEventListener('change',renderPredecessorChoices);
   function openDates(id,{date=null}={}){
     const info=find(id);if(!info)return;
     dateCreate=false;dateEditId=id;
@@ -646,20 +705,31 @@
     if(end<start)throw Error('End date must be the same as or after start date.');
     return {startDate:start,endDate:end};
   }
+
   function saveDates(event){event.preventDefault();try{
-    const dates=readDates();
-    if(dateCreate){const title=$('dateNewTitle').value.trim();if(!title)throw Error('Enter a task name.');
-      const pid=$('dateNewParent').value;const dest=pid?find(pid):null;
-      if(pid&&!dest)throw Error('That parent task is no longer available.');
-      record();const task=makeNode(title);Object.assign(task,dates);
-      if(dest){dest.node.children.push(task);dest.node.collapsed=false;}else nodes.push(task);
+    const dates=readDates(),predecessors=[...stagedPreds];
+    let next;
+    if(dateCreate){
+      const title=$('dateNewTitle').value.trim();if(!title)throw Error('Enter a task name.');
+      const pid=$('dateNewParent').value;
+      const draft=JSON.parse(JSON.stringify(nodes));
+      const task=makeNode(title);
+      function locate(list,id){for(const n of list){if(n.id===id)return n;const sub=locate(n.children,id);if(sub)return sub;}return null;}
+      const parent=pid?locate(draft,pid):null;
+      if(pid&&!parent)throw Error('That parent task is no longer available.');
+      if(parent){parent.children.push(task);parent.collapsed=false;}else draft.push(task);
+      next=D.reschedule(draft,task.id,dates,predecessors);
+      record();nodes=next;
       if(!selectedBranchId&&pid)selectedBranchId=pid;
     }else{
       const info=find(dateEditId);if(!info)throw Error('This task no longer exists.');
-      if(info.node.startDate===dates.startDate&&info.node.endDate===dates.endDate){closeDialog('dateDialog');return;}
-      record();Object.assign(info.node,dates);
+      const existing=info.node.predecessorIds||[];
+      if(info.node.startDate===dates.startDate&&info.node.endDate===dates.endDate&&existing.length===predecessors.length&&existing.every(id=>predecessors.includes(id))){closeDialog('dateDialog');return;}
+      next=D.reschedule(nodes,dateEditId,dates,predecessors);
+      record();nodes=next;
     }
-    closeDialog('dateDialog');save();render();toast(dateCreate?'Scheduled task added':'Schedule updated');
+    closeDialog('dateDialog');save();render();
+    toast(dateCreate?'Scheduled task added':'Schedule and dependencies updated · Undo available');
   }catch(e){$('dateError').textContent=e.message;}}
   $('dateNotes').onclick=()=>{if(!dateEditId)return;const id=dateEditId;closeDialog('dateDialog');openNotes(id);};
    $('dateForm').addEventListener('submit',saveDates);
