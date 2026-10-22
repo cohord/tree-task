@@ -376,8 +376,8 @@
   function addRoot(){record();const newTask=makeNode('');nodes.push(newTask);save();render();focusTask(newTask.id);}
   function addChild(id){const info=find(id);if(!info)return;record();const child=makeNode('');info.node.children.push(child);info.node.collapsed=false;save();render();focusTask(child.id);}
   function addSibling(id){const info=find(id);if(!info)return;record();const sibling=makeNode('');info.arr.splice(info.index+1,0,sibling);save();render();focusTask(sibling.id);}
-  function indent(id){const info=find(id);if(!info||info.index===0){toast('Place it after a sibling before indenting');return;}record();const previous=info.arr[info.index-1];info.arr.splice(info.index,1);previous.children.push(info.node);previous.collapsed=false;save();render();focusTask(id);}
-  function outdent(id){const info=find(id);if(!info||!info.parent){toast('Already at the top level');return;}const p=find(info.parent.id);if(!p)return;record();info.arr.splice(info.index,1);p.arr.splice(p.index+1,0,info.node);save();render();focusTask(id);}
+  function indent(id){const info=find(id);if(!info||info.index===0){toast('Place it after a sibling before indenting');return;}record();const previous=info.arr[info.index-1];info.arr.splice(info.index,1);previous.children.push(info.node);previous.collapsed=false;if(!confirmDependencySafeMove())return;save();render();focusTask(id);}
+  function outdent(id){const info=find(id);if(!info||!info.parent){toast('Already at the top level');return;}const p=find(info.parent.id);if(!p)return;record();info.arr.splice(info.index,1);p.arr.splice(p.index+1,0,info.node);if(!confirmDependencySafeMove())return;save();render();focusTask(id);}
   function reorder(id,direction){const info=find(id);if(!info)return;const j=info.index+direction;if(j<0||j>=info.arr.length){toast('No more tasks in that direction');return;}record();[info.arr[info.index],info.arr[j]]=[info.arr[j],info.arr[info.index]];save();render();focusTask(id);}
   function setDescendantsCompleted(n,value){n.completed=value;for(const c of n.children)setDescendantsCompleted(c,value);}
   function toggleCompleted(id){const info=find(id);if(!info)return;record();setDescendantsCompleted(info.node,!info.node.completed);save();render();}
@@ -408,8 +408,9 @@
    });
    function showTaskMenu(id){activeId=id;const info=find(id);if(!info)return;$('taskDialogTitle').textContent=info.node.title||'New task';actionAvailability();$('taskDialog').showModal();}
   function closeDialog(id){const d=$(id);if(d.open)d.close();}
+  function confirmDependencySafeMove(){try{window.TreeDependencies.validateTree(nodes);return true;}catch(e){const previous=undoHistory.pop();if(previous)nodes=JSON.parse(previous);updateUndo();toast('Move blocked: '+e.message);return false;}}
   function isWithin(node,descendantId){return node.id===descendantId||node.children.some(c=>isWithin(c,descendantId));}
-  function moveNode(id,parentId){const info=find(id);if(!info)return;if(parentId===id||isWithin(info.node,parentId))return;const target=parentId?find(parentId):null;if(parentId&&!target)return;record();info.arr.splice(info.index,1);if(target){target.node.children.push(info.node);target.node.collapsed=false;}else nodes.push(info.node);save();render();focusTask(id);toast('Task moved');}
+  function moveNode(id,parentId){const info=find(id);if(!info)return;if(parentId===id||isWithin(info.node,parentId))return;const target=parentId?find(parentId):null;if(parentId&&!target)return;record();info.arr.splice(info.index,1);if(target){target.node.children.push(info.node);target.node.collapsed=false;}else nodes.push(info.node);if(!confirmDependencySafeMove())return;save();render();focusTask(id);toast('Task moved');}
   function openMoveDialog(id){moveId=id;$('moveSearch').value='';renderDestinations();$('moveDialog').showModal();}
   function renderDestinations(){const q=$('moveSearch').value.trim().toLowerCase();const info=find(moveId);if(!info)return;const options=[{id:null,title:'Top level',path:'Move to the root'}];for(const v of flatten()){if(isWithin(info.node,v.n.id))continue;const full=[...v.path,v.n.title].join(' › ');if(q&&!full.toLowerCase().includes(q))continue;options.push({id:v.n.id,title:v.n.title||'Untitled',path:v.path.join(' › ')||'Top level'});}
     $('moveOptions').innerHTML=options.map(o=>`<button class="action" data-destination="${o.id===null?'__root__':escapeText(o.id)}"><span>${escapeText(o.title)}<small>${escapeText(o.path)}</small></span><span aria-hidden="true">›</span></button>`).join('')||'<p class="dialog-note">No destinations found.</p>';
@@ -417,7 +418,7 @@
   function reorderByDrop(sourceId,targetId,position){if(!sourceId||sourceId===targetId)return;const source=find(sourceId),target=find(targetId);if(!source||!target||isWithin(source.node,targetId))return;record();source.arr.splice(source.index,1);const updatedTarget=find(targetId);if(!updatedTarget)return;
     if(position==='child'){updatedTarget.node.children.push(source.node);updatedTarget.node.collapsed=false;}
     else{updatedTarget.arr.splice(updatedTarget.index+(position==='after'?1:0),0,source.node);}
-    save();render();toast('Task moved');
+    if(!confirmDependencySafeMove())return;save();render();toast('Task moved');
   }
   function clearSearch(){searchText='';$('searchInput').value='';$('searchWrap').classList.remove('visible');render();}
   function openSearch(){$('searchWrap').classList.add('visible');$('searchInput').focus();}
