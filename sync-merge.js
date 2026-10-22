@@ -7,7 +7,7 @@
   'use strict';
   const clone = x => JSON.parse(JSON.stringify(x));
   const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-  const fields = ['title', 'completed', 'collapsed', 'startDate', 'endDate'];
+  const fields = ['title', 'notes', 'completed', 'collapsed', 'startDate', 'endDate'];
   function index(tree) {
     const byId = new Map(), shape = [];
     function walk(list, parent) {
@@ -38,8 +38,10 @@
             typeof n.completed !== 'boolean' || typeof n.collapsed !== 'boolean') throw Error('Invalid task in cloud file');
         if (++total > 10000) throw Error('Too many tasks in cloud file');
         seen.add(n.id);
+        if(n.notes!==undefined&&(typeof n.notes!=='string'||n.notes.length>20000))throw Error('Invalid task notes in cloud file');
+        const notes=n.notes??'';
         const {startDate,endDate}=windowPlanDates(n);
-        return {id:n.id, title:n.title, completed:n.completed, collapsed:n.collapsed, startDate, endDate, children:walk(n.children,depth+1)};
+        return {id:n.id, title:n.title, notes, completed:n.completed, collapsed:n.collapsed, startDate, endDate, children:walk(n.children,depth+1)};
       });
     }
     return walk(tree,0);
