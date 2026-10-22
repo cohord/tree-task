@@ -183,7 +183,7 @@
   <div class="dialog-top"><h3 id="taskDialogTitle">Task actions</h3><button class="dialog-close" data-close="taskDialog" aria-label="Close">×</button></div>
   <div class="dialog-content" id="taskActions">
     <button class="action" data-task-action="notes">Add / edit notes <small>Saved automatically</small></button>
-     <button class="action" data-task-action="dates">Schedule / edit dates <small>Gantt + Calendar</small></button>
+     <button class="action" data-task-action="dates">Schedule / dependencies <small>Gantt + Calendar</small></button>
     <button class="action" data-task-action="child">Add child task <small>⌘/Ctrl + Enter</small></button>
     <button class="action" data-task-action="sibling">Add sibling <small>Enter</small></button>
     <button class="action" data-task-action="indent">Indent under previous sibling <small>Tab</small></button>
@@ -210,7 +210,8 @@
     <div id="dateNewParentWrap" hidden><label for="dateNewParent">Parent task / project</label><select id="dateNewParent"></select></div>
     <button id="dateNotes" class="date-notes-btn" type="button" hidden>Open task notes ↗</button>
      <div class="two-cols"><div><label for="planStart">Start date</label><input id="planStart" type="date"></div><div><label for="planEnd">End / due date</label><input id="planEnd" type="date"></div></div>
-    <p class="hint">Leave both dates blank for an unscheduled task. If you set one date, the task is scheduled for that day. Undated parent tasks show their children's overall date range in Gantt.</p>
+    <div class="predecessor-editor" id="predecessorEditor"><div class="predecessor-heading"><strong>Depends on (predecessors)</strong><span id="predCount" class="gantt-range">None</span></div><input id="predecessorSearch" class="predecessor-search" placeholder="Find a task or project…" aria-label="Search for predecessor tasks"><div id="predecessorList" class="predecessor-list" role="group" aria-label="Select predecessors"></div><p class="predecessor-note">Finish-to-start: linked tasks start after the predecessor ends. Moving a task moves dependent tasks while preserving gaps.</p></div>
+     <p class="hint">Leave both dates blank for an unscheduled task. If you set one date, the task is scheduled for that day. Undated parent tasks show their children's overall date range in Gantt.</p>
     <div class="date-error" id="dateError" role="alert"></div>
     <div class="date-buttons"><button id="dateClear" type="button">Clear dates</button><button class="primary" type="submit">Save schedule</button></div>
   </form>
@@ -247,7 +248,7 @@
     <button class="action danger" id="clearButton">Delete all tasks</button>
     <p class="dialog-note">Edits save immediately on this device. OneDrive sync needs an internet connection and a Microsoft sign-in. If two devices change the same task or restructure the tree independently, Tree Task asks before replacing anything. Make regular JSON backups too.</p>
   </div>
-  <div class="version">Tree Task · prototype 3.1 · Tree + Gantt + Calendar + Notes</div>
+  <div class="version">Tree Task · prototype 4.0 · Tree + Gantt + Calendar + Dependencies</div>
 </dialog>
 <dialog id="moveDialog" aria-labelledby="moveTitle">
   <div class="dialog-top"><h3 id="moveTitle">Move task under…</h3><button class="dialog-close" data-close="moveDialog" aria-label="Close">×</button></div>
@@ -286,6 +287,7 @@
 </dialog>
 <input type="file" id="importFile" hidden accept=".json,application/json">
 <script src="./planning-core.js"></script>
+<script src="./dependency-core.js"></script>
 <script src="./sync-merge.js"></script>
 <script src="./onedrive-sync.js"></script>
 <script>
@@ -295,7 +297,7 @@
   const SAMPLE_FLAG = 'tree-task.sample-notice';
   const $ = id => document.getElementById(id);
   const ids = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 't-'+Date.now()+'-'+Math.random().toString(36).slice(2);
-  const makeNode = (title='', children=[]) => ({id:ids(), title, notes:'', completed:false, collapsed:false, startDate:null, endDate:null, children});
+  const makeNode = (title='', children=[]) => ({id:ids(), title, notes:'', completed:false, collapsed:false, startDate:null, endDate:null, predecessorIds:[], children});
   const examples = () => [
     makeNode('Example project', [makeNode('Project launch', [makeNode('Plan the work', [makeNode('Review the checklist')]),makeNode('Prepare for launch')])]),
     makeNode('Example tasks', [makeNode('Getting started', [makeNode('Add your first task'),makeNode('Try the planning views')]),makeNode('Connect OneDrive when ready')])
@@ -324,9 +326,9 @@
         total++;if(total>10000)throw Error('Maximum 10,000 tasks per import.');
         const id=(typeof n.id==='string'&&n.id.length<200&&!seen.has(n.id))?n.id:ids();seen.add(id);
         const dates=window.TreePlanning.normalizedDates(n);
-        return {id,title:String(n.title??'').slice(0,2000),notes:typeof n.notes==='string'?n.notes.slice(0,20000):'',completed:!!n.completed,collapsed:!!n.collapsed,...dates,children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
+        return {id,title:String(n.title??'').slice(0,2000),notes:typeof n.notes==='string'?n.notes.slice(0,20000):'',completed:!!n.completed,collapsed:!!n.collapsed,...dates,predecessorIds:n.predecessorIds??[],children:walk(Array.isArray(n.children)?n.children:[],depth+1)};
       });
-    }; return walk(value,0);
+    }; const result=walk(value,0);window.TreeDependencies.validateTree(result);return result;
   }
   function save(){try{localStorage.setItem(STORAGE,JSON.stringify({version:1,nodes}));cloudSync?.onChange();}catch(e){toast('Storage full or unavailable — export a backup');}}
   function record(previous){undoHistory.push(previous??JSON.stringify(nodes));if(undoHistory.length>40)undoHistory.shift();updateUndo();}
@@ -379,7 +381,7 @@
   function reorder(id,direction){const info=find(id);if(!info)return;const j=info.index+direction;if(j<0||j>=info.arr.length){toast('No more tasks in that direction');return;}record();[info.arr[info.index],info.arr[j]]=[info.arr[j],info.arr[info.index]];save();render();focusTask(id);}
   function setDescendantsCompleted(n,value){n.completed=value;for(const c of n.children)setDescendantsCompleted(c,value);}
   function toggleCompleted(id){const info=find(id);if(!info)return;record();setDescendantsCompleted(info.node,!info.node.completed);save();render();}
-  function deleteNode(id){const info=find(id);if(!info)return;const howMany=1+descendants(info.node).all;if(!confirm(`Delete “${info.node.title||'Untitled'}”${howMany>1?` and its ${howMany-1} child tasks`:''}? You can undo this.`))return;record();info.arr.splice(info.index,1);save();render();toast('Task deleted. Undo is available.');}
+  function deleteNode(id){const info=find(id);if(!info)return;const howMany=1+descendants(info.node).all;if(!confirm(`Delete “${info.node.title||'Untitled'}”${howMany>1?` and its ${howMany-1} child tasks`:''}? You can undo this.`))return;record();const deleted=flatten(info.node.children).map(v=>v.n.id);deleted.push(info.node.id);info.arr.splice(info.index,1);window.TreeDependencies.purgeReferences(nodes,deleted);save();render();toast('Task deleted. Undo is available.');}
   function collapse(id){const info=find(id);if(!info||!info.node.children.length)return;info.node.collapsed=!info.node.collapsed;save();render();}
   function setCollapsed(value){record();function walk(arr){for(const n of arr){n.collapsed=value;walk(n.children)}}walk(nodes);save();render();}
   function toast(message){const el=$('toast');el.textContent=message;el.classList.add('show');clearTimeout(lastToastTimer);lastToastTimer=setTimeout(()=>el.classList.remove('show'),2700);}
@@ -588,20 +590,20 @@
     for(const {node:n,depth,range,explicit} of rows){
       const label=escapeText(n.title||'Untitled task');
       const isParent=n.children.length>0;
-      const text=`<button class="gantt-label ${n.completed?'done':''} ${isParent?'branch':''}" title="${label} · Edit dates" data-plan-edit="${escapeText(n.id)}" style="padding-left:${Math.min(depth,15)*13+4}px">${isParent?'▾ ':''}${label}</button>`;
+      const text=`<button class="gantt-label ${n.completed?'done':''} ${isParent?'branch':''}" title="${label} · Edit dates and predecessors" data-plan-edit="${escapeText(n.id)}" style="padding-left:${Math.min(depth,15)*13+4}px">${isParent?'▾ ':''}${label}</button>`;
       let mark='';
       if(range){const visibleStart=range.start<start?start:range.start,visibleEnd=range.end>end?end:range.end;
         if(visibleStart<=visibleEnd){const x=P.diffDays(start,visibleStart)*dayW,w=(P.diffDays(visibleStart,visibleEnd)+1)*dayW;
-          const summary=range.derived;const draggable=Boolean(explicit)&&!summary;
+          const summary=range.derived||isParent;const draggable=Boolean(explicit)&&!summary;
           mark=`<button class="gantt-bar ${summary?'summary':''} ${n.completed?'completed':''}" style="left:${x+2}px;width:${Math.max(8,w-4)}px" title="${label} · ${range.start} – ${range.end}${summary?' · Dates from children':''}" data-plan-edit="${escapeText(n.id)}" data-bar-id="${escapeText(n.id)}" data-drag="${draggable?'1':'0'}" data-start="${range.start}" data-end="${range.end}" data-dayw="${dayW}" aria-label="${label}: ${range.start} to ${range.end}. Click to edit dates."><span class="gantt-bar-text">${w>90?label:''}</span>${draggable&&w>28?'<span class="bar-resize" aria-hidden="true"></span>':''}</button>`;
         }
       }else mark=`<button class="gantt-no-date" data-plan-edit="${escapeText(n.id)}">+ Set dates</button>`;
-      lines+=`<div class="gantt-line"><div class="gantt-name">${text}<span class="gantt-range">${explicit?shortDate(explicit.start):''}</span></div><div class="gantt-timeline" data-row-id="${escapeText(n.id)}" data-range-start="${start}" data-dayw="${dayW}" style="${timelineStyle}">${mark}</div></div>`;
+      lines+=`<div class="gantt-line"><div class="gantt-name">${text}<span class="gantt-range">${explicit?shortDate(explicit.start):''}</span>${(n.predecessorIds||[]).length?'<button class="gantt-linked" data-plan-edit="'+escapeText(n.id)+'" title="Edit predecessors">⛓</button>':''}</div><div class="gantt-timeline" data-row-id="${escapeText(n.id)}" data-range-start="${start}" data-dayw="${dayW}" style="${timelineStyle}">${mark}</div></div>`;
     }
     const unplanned=rows.filter(r=>!r.range).length;
     host.innerHTML=planToolbar('Gantt · '+monthLabel(start))+`<div class="gantt-shell"><div class="gantt-canvas">${header}${lines||`<div class="plan-empty" style="width:${262+width}px">Your tree is empty. Add a task and give it dates to start planning.</div>`}</div></div>
-      <p class="plan-footnote">${rows.length} tasks · ${unplanned} without dates · Tap a task to schedule it. Drag a dated bar to move it, or its right edge to extend it. Parent task bars can summarise their child dates automatically. Scroll horizontally to see more time.</p>`;
-    const scroller=host.querySelector('.gantt-shell');if(prev){scroller.scrollLeft=sx;scroller.scrollTop=sy;}else{scroller.scrollLeft=Math.max(0,(P.diffDays(start,today)-3)*dayW);}
+      <p class="plan-footnote">${rows.length} tasks · ${unplanned} without dates · Tap a task to schedule it. Drag a dated bar to move it, or its right edge to extend it. Dependency arrows show what must finish first; linked dates move together. Parent bars roll up child dates automatically. Scroll horizontally to see more time.</p>`;
+    const scroller=host.querySelector('.gantt-shell');if(prev){scroller.scrollLeft=sx;scroller.scrollTop=sy;}else{scroller.scrollLeft=Math.max(0,(P.diffDays(start,today)-3)*dayW);}drawDependencyArrows(host.querySelector('.gantt-canvas'),rows,start,end,dayW,width);
   }
   function renderCalendar(host){
     const rows=rowsInScope(),today=P.today(),first=P.weekStart(calendarMonth),last=P.addDays(P.monthStart(P.moveMonth(calendarMonth,1)),-1);
@@ -625,7 +627,7 @@
     $('dateNewTitleWrap').hidden=true;$('dateNewParentWrap').hidden=true;$('dateNotes').hidden=false;
     const r=P.explicitRange(info.node);
     $('planStart').value=r?.start||date||'';$('planEnd').value=r?.end||date||'';
-    $('dateClear').hidden=false;$('dateError').textContent='';
+    $('dateClear').hidden=false;$('dateError').textContent='';stagedPreds=new Set(info.node.predecessorIds||[]);$('predecessorSearch').value='';renderPredecessorChoices();
     $('dateDialog').showModal();
   }
   function openNewTask(date=null){
@@ -634,7 +636,7 @@
     $('dateNewTitle').value='';
     $('dateNewParent').innerHTML='<option value="">Top level</option>'+flatten().map(({n,depth})=>`<option value="${escapeText(n.id)}" ${selectedBranchId===n.id?'selected':''}>${escapeText('  '.repeat(Math.min(depth,12))+(n.title||'Untitled'))}</option>`).join('');
     $('planStart').value=date||P.today();$('planEnd').value=date||P.today();
-    $('dateClear').hidden=true;$('dateError').textContent='';
+    $('dateClear').hidden=true;$('dateError').textContent='';stagedPreds=new Set();$('predecessorSearch').value='';renderPredecessorChoices();
     $('dateDialog').showModal();$('dateNewTitle').focus();
   }
   function readDates(){let start=$('planStart').value||null,end=$('planEnd').value||null;
